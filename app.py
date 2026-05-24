@@ -1,5 +1,9 @@
 from flask import Flask, jsonify, request
 import requests
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 
@@ -19,6 +23,21 @@ def get_coordinates(location):
         return None, None
     return float(data[0]["lat"]), float(data[0]["lon"])
 
+def get_weather(lat, lon):
+    url = "https://api.openweathermap.org/data/2.5/weather"
+    params = {
+        "lat": lat,
+        "lon": lon,
+        "appid": os.environ.get("WEATHER_API_KEY"),
+        "units": "metric"
+    }
+    response = requests.get(url, params=params)
+    data = response.json()
+    return {
+        "status": data["weather"][0]["description"],
+        "temperature": data["main"]["temp"]
+    }
+
 @app.route('/health')
 def health():
     return jsonify({"status": "ok"})
@@ -36,10 +55,12 @@ def recommend():
     if lat is None:
         return jsonify({"error": "Location not recognised, please enter a more specific location"}), 404
 
+    weather = get_weather(lat, lon)
+
     return jsonify({
         "location": location,
         "coordinates": {"lat": lat, "lon": lon},
-        "weather": None,
+        "weather": weather,
         "places": [],
         "recommendation": None
     })
