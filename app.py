@@ -10,38 +10,46 @@ WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY")
 app = Flask(__name__)
 
 def get_coordinates(location):
-    url = "https://nominatim.openstreetmap.org/search"
-    params = {
-        "q": location,
-        "format": "json",
-        "limit": 1
-    }
-    headers = {"User-Agent": "WeatherGo/1.0"}
-    response = requests.get(url, params=params, headers=headers)
-    data = response.json()
-    if not data:
+    try:
+        url = "https://nominatim.openstreetmap.org/search"
+        params = {
+            "q": location,
+            "format": "json",
+            "limit": 1
+        }
+        headers = {"User-Agent": "WeatherGo/1.0"}
+        response = requests.get(url, params=params, headers=headers, timeout=10)
+        data = response.json()
+        if not data:
+            return None, None
+        return float(data[0]["lat"]), float(data[0]["lon"])
+    except Exception as e:
+        print("Nominatim error:", e)
         return None, None
-    return float(data[0]["lat"]), float(data[0]["lon"])
 
 def get_weather(lat, lon):
-    url = "https://api.openweathermap.org/data/2.5/weather"
-    params = {
-        "lat": lat,
-        "lon": lon,
-        "appid": WEATHER_API_KEY,
-        "units": "metric"
-    }
-    response = requests.get(url, params=params)
-    data = response.json()
-    return {
-        "status": data["weather"][0]["description"],
-        "temperature": data["main"]["temp"]
-    }
+    try:
+        url = "https://api.openweathermap.org/data/2.5/weather"
+        params = {
+            "lat": lat,
+            "lon": lon,
+            "appid": WEATHER_API_KEY,
+            "units": "metric"
+        }
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+        return {
+            "status": data["weather"][0]["description"],
+            "temperature": data["main"]["temp"]
+        }
+    except Exception as e:
+        print("OpenWeatherMap error:", e)
+        return None
 
 def get_places(lat, lon, activity_type):
-    query = f"[out:json];node[amenity={activity_type}](around:2000,{lat},{lon});out 5;"
-    url = "https://overpass-api.de/api/interpreter"
     try:
+        query = f"[out:json];node[amenity={activity_type}](around:2000,{lat},{lon});out 5;"
+        url = "https://overpass-api.de/api/interpreter"
         response = requests.get(
             url,
             params={"data": query},
@@ -51,8 +59,6 @@ def get_places(lat, lon, activity_type):
             },
             timeout=10
         )
-        print("Status:", response.status_code)
-        print("Response:", response.text[:500])
         if response.status_code != 200 or not response.text:
             return []
         data = response.json()
@@ -63,19 +69,19 @@ def get_places(lat, lon, activity_type):
             places.append(name)
         return places
     except Exception as e:
-        print("Error:", e)
+        print("Overpass error:", e)
         return []
 
 def get_recommendation(location, weather, places, activity_type):
-    microservice_url = os.environ.get("GROQ_MICROSERVICE_URL", "http://localhost:5001/generate")
-    payload = {
-        "location": location,
-        "weather": weather["status"],
-        "temperature": weather["temperature"],
-        "places": places,
-        "activity_type": activity_type
-    }
     try:
+        microservice_url = os.environ.get("GROQ_MICROSERVICE_URL", "http://localhost:5001/generate")
+        payload = {
+            "location": location,
+            "weather": weather["status"],
+            "temperature": weather["temperature"],
+            "places": places,
+            "activity_type": activity_type
+        }
         response = requests.post(microservice_url, json=payload, timeout=10)
         if response.status_code == 200:
             return response.json().get("recommendation")
@@ -102,8 +108,10 @@ def recommend():
         return jsonify({"error": "Location not recognised, please enter a more specific location"}), 404
 
     weather = get_weather(lat, lon)
-    places = get_places(lat, lon, activity_type)
+    if weather is None:
+        return jsonify({"error": "Weather service is temporarily unavailable, please try again later"}), 503
 
+    places = get_places(lat, lon, activity_type)
     if not places:
         return jsonify({"error": "No relevant places found nearby"}), 404
 
