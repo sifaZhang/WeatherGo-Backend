@@ -64,6 +64,24 @@ def get_places(lat, lon, activity_type):
         print("Error:", e)
         return []
 
+def get_recommendation(location, weather, places, activity_type):
+    microservice_url = os.environ.get("GROQ_MICROSERVICE_URL", "http://localhost:5001/generate")
+    payload = {
+        "location": location,
+        "weather": weather["status"],
+        "temperature": weather["temperature"],
+        "places": places,
+        "activity_type": activity_type
+    }
+    try:
+        response = requests.post(microservice_url, json=payload, timeout=10)
+        if response.status_code == 200:
+            return response.json().get("recommendation")
+        return None
+    except Exception as e:
+        print("Groq microservice error:", e)
+        return None
+
 @app.route('/health')
 def health():
     return jsonify({"status": "ok"})
@@ -87,11 +105,13 @@ def recommend():
     if not places:
         return jsonify({"error": "No relevant places found nearby"}), 404
 
+    recommendation = get_recommendation(location, weather, places, activity_type)
+
     return jsonify({
         "location": location,
         "weather": weather,
         "places": places,
-        "recommendation": None
+        "recommendation": recommendation
     })
 
 if __name__ == '__main__':
