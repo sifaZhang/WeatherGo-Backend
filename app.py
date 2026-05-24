@@ -14,9 +14,7 @@ def get_coordinates(location):
         "format": "json",
         "limit": 1
     }
-    headers = {
-        "User-Agent": "WeatherGo/1.0"
-    }
+    headers = {"User-Agent": "WeatherGo/1.0"}
     response = requests.get(url, params=params, headers=headers)
     data = response.json()
     if not data:
@@ -38,6 +36,34 @@ def get_weather(lat, lon):
         "temperature": data["main"]["temp"]
     }
 
+def get_places(lat, lon, activity_type):
+    query = f"[out:json];node[amenity={activity_type}](around:2000,{lat},{lon});out 5;"
+    url = "https://overpass-api.de/api/interpreter"
+    try:
+        response = requests.get(
+            url,
+            params={"data": query},
+            headers={
+                "User-Agent": "WeatherGo/1.0",
+                "Accept": "*/*"
+            },
+            timeout=10
+        )
+        print("Status:", response.status_code)
+        print("Response:", response.text[:500])
+        if response.status_code != 200 or not response.text:
+            return []
+        data = response.json()
+        places = []
+        for element in data.get("elements", []):
+            tags = element.get("tags", {})
+            name = tags.get("name") or tags.get("addr:street") or "Unknown place"
+            places.append(name)
+        return places
+    except Exception as e:
+        print("Error:", e)
+        return []
+
 @app.route('/health')
 def health():
     return jsonify({"status": "ok"})
@@ -56,12 +82,15 @@ def recommend():
         return jsonify({"error": "Location not recognised, please enter a more specific location"}), 404
 
     weather = get_weather(lat, lon)
+    places = get_places(lat, lon, activity_type)
+
+    if not places:
+        return jsonify({"error": "No relevant places found nearby"}), 404
 
     return jsonify({
         "location": location,
-        "coordinates": {"lat": lat, "lon": lon},
         "weather": weather,
-        "places": [],
+        "places": places,
         "recommendation": None
     })
 
