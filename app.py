@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY")
+
 app = Flask(__name__)
 
 def get_coordinates(location):
@@ -26,7 +28,7 @@ def get_weather(lat, lon):
     params = {
         "lat": lat,
         "lon": lon,
-        "appid": os.environ.get("WEATHER_API_KEY"),
+        "appid": WEATHER_API_KEY,
         "units": "metric"
     }
     response = requests.get(url, params=params)
