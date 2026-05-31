@@ -19,16 +19,14 @@ def get_coordinates(location):
             "format": "json",
             "limit": 1
         }
-        headers = {"User-Agent": "WeatherGo/1.0 (student project; contact: your@email.com)"}
+        headers = {"User-Agent": "WeatherGo/1.0"}
         response = requests.get(url, params=params, headers=headers, timeout=10)
-        print("Nominatim status:", response.status_code)
-        print("Nominatim response:", response.text[:200])
         data = response.json()
         if not data:
             return None, None
         return float(data[0]["lat"]), float(data[0]["lon"])
     except Exception as e:
-        print("Nominatim error:", str(e))
+        print("Nominatim error:", e)
         return None, None
 
 def get_weather(lat, lon):
