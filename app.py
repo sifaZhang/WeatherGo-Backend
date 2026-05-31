@@ -1,11 +1,13 @@
 from flask import Flask, jsonify, request
 import requests
 import os
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
 
 WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY")
+GEO_KEY = os.environ.get("GEO_KEY")
 
 app = Flask(__name__)
 
@@ -46,31 +48,88 @@ def get_weather(lat, lon):
         print("OpenWeatherMap error:", e)
         return None
 
-def get_places(lat, lon, activity_type):
+def get_places_overpass(lat, lon, activity_type):
+    """尝试从 Overpass API 获取地点"""
     try:
         query = f"[out:json];node[amenity={activity_type}](around:2000,{lat},{lon});out 5;"
-        url = "https://overpass-api.de/api/interpreter"
-        response = requests.get(
-            url,
-            params={"data": query},
-            headers={
-                "User-Agent": "WeatherGo/1.0",
-                "Accept": "*/*"
-            },
-            timeout=10
-        )
-        if response.status_code != 200 or not response.text:
-            return []
-        data = response.json()
-        places = []
-        for element in data.get("elements", []):
-            tags = element.get("tags", {})
-            name = tags.get("name") or tags.get("addr:street") or "Unknown place"
-            places.append(name)
-        return places
+        servers = [
+            "https://overpass-api.de/api/interpreter",
+        ]
+        for server in servers:
+            try:
+                response = requests.get(
+                    server,
+                    params={"data": query},
+                    headers={"User-Agent": "WeatherGo/1.0", "Accept": "*/*"},
+                    timeout=10
+                )
+                if response.status_code == 200 and response.text:
+                    data = response.json()
+                    places = []
+                    for element in data.get("elements", []):
+                        tags = element.get("tags", {})
+                        name = tags.get("name") or tags.get("addr:street") or "Unknown place"
+                        places.append(name)
+                    if places:
+                        print(f"✅ Overpass success via {server}")
+                        return places
+            except Exception as e:
+                print(f"Overpass {server} error: {e}")
+                continue
     except Exception as e:
         print("Overpass error:", e)
+    return None
+
+# 映射 amenity 类型到 Geoapify 分类
+GEOAPIFY_CATEGORY_MAP = {
+    "cafe":        "catering.cafe",
+    "restaurant":  "catering.restaurant",
+    "park":        "leisure.park",
+    "library":     "education.library",
+    "supermarket": "commercial.supermarket",
+    "gym":         "sport.fitness",
+    "fitness_centre": "sport.fitness",
+    "hospital":    "healthcare.hospital",
+    "pharmacy":    "healthcare.pharmacy",
+    "school":      "education.school",
+    "cinema":      "entertainment.cinema",
+}
+
+def get_places_geoapify(lat, lon, activity_type):
+    """从 Geoapify 获取地点（备用）"""
+    try:
+        category = GEOAPIFY_CATEGORY_MAP.get(activity_type, "catering.restaurant")
+        url = "https://api.geoapify.com/v2/places"
+        params = {
+            "categories": category,
+            "filter": f"circle:{lon},{lat},2000",
+            "limit": 5,
+            "apiKey": GEO_KEY,
+        }
+        response = requests.get(url, params=params, timeout=15)
+        response.raise_for_status()
+        features = response.json().get("features", [])
+        places = []
+        for f in features:
+            name = f.get("properties", {}).get("name")
+            if name and name not in places:
+                places.append(name)
+        if places:
+            print("✅ Geoapify fallback success")
+        return places
+    except Exception as e:
+        print("Geoapify error:", e)
         return []
+
+def get_places(lat, lon, activity_type):
+    """先尝试 Overpass，失败则切换到 Geoapify"""
+    print("🔍 尝试 Overpass...")
+    places = get_places_overpass(lat, lon, activity_type)
+    if places:
+        return places
+
+    print("⚠️ Overpass 无结果，切换到 Geoapify...")
+    return get_places_geoapify(lat, lon, activity_type)
 
 def get_recommendation(location, weather, places, activity_type):
     try:
