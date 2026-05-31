@@ -31,3 +31,13 @@ jobs:
       - name: Build Docker image
         run: |
           docker build -t weathergo-backend .
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Trigger Render deployment
+        run: |
+          curl "${{ secrets.RENDER_DEPLOY_HOOK }}"
