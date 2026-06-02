@@ -4,6 +4,17 @@ import os
 import time
 from dotenv import load_dotenv
 from flask_cors import CORS
+import logging
+import sys
+
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stdout,
+    format="%(asctime)s %(levelname)s %(message)s",
+    force=True
+)
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -13,15 +24,15 @@ GEO_KEY = os.environ.get("GEO_KEY")
 app = Flask(__name__)
 CORS(app)
 
-print("=== WeatherGo Backend Starting ===")
-print(f"WEATHER_API_KEY set: {bool(WEATHER_API_KEY)}")
-print(f"GEO_KEY set: {bool(GEO_KEY)}")
-print(f"GROQ_MICROSERVICE_URL: {os.environ.get('GROQ_MICROSERVICE_URL', 'not set (default localhost:5001)')}")
+logger.info("=== WeatherGo Backend Starting ===")
+logger.info(f"WEATHER_API_KEY set: {bool(WEATHER_API_KEY)}")
+logger.info(f"GEO_KEY set: {bool(GEO_KEY)}")
+logger.info(f"GROQ_MICROSERVICE_URL: {os.environ.get('GROQ_MICROSERVICE_URL', 'not set (default localhost:5001)')}")
 
 
 def get_coordinates(location):
     try:
-        print(f"[get_coordinates] Looking up: {location}")
+        logger.info(f"[get_coordinates] Looking up: {location}")
         url = "https://nominatim.openstreetmap.org/search"
         params = {
             "q": location,
@@ -30,26 +41,29 @@ def get_coordinates(location):
         }
         headers = {"User-Agent": "WeatherGo/1.0 (Sifazhang.nzl@gmail.com)"}
         response = requests.get(url, params=params, headers=headers, timeout=10)
-        print(f"[get_coordinates] Nominatim status: {response.status_code}")
-        print(f"[get_coordinates] Nominatim response: {response.text[:200]}")
+        logger.info(f"[get_coordinates] STATUS={response.status_code}")
+        logger.info(f"[get_coordinates] BODY={response.text[:1000]}")
+        logger.info(f"[get_coordinates] Nominatim status: {response.status_code}")
+        logger.info(f"[get_coordinates] Nominatim response: {response.text[:200]}")
+        response.raise_for_status()
         data = response.json()
         if not data:
-            print("[get_coordinates] ERROR: Empty response from Nominatim")
+            logger.info("[get_coordinates] ERROR: Empty response from Nominatim")
             return None, None
         lat = float(data[0]["lat"])
         lon = float(data[0]["lon"])
-        print(f"[get_coordinates] SUCCESS: lat={lat}, lon={lon}")
+        logger.info(f"[get_coordinates] SUCCESS: lat={lat}, lon={lon}")
         return lat, lon
     except Exception as e:
-        print(f"[get_coordinates] EXCEPTION: {str(e)}")
+        logger.exception(f"[get_coordinates] EXCEPTION: {str(e)}")
         return None, None
 
 
 def get_weather(lat, lon):
     try:
-        print(f"[get_weather] Fetching weather for lat={lat}, lon={lon}")
+        logger.info(f"[get_weather] Fetching weather for lat={lat}, lon={lon}")
         if not WEATHER_API_KEY:
-            print("[get_weather] ERROR: WEATHER_API_KEY is not set")
+            logger.info("[get_weather] ERROR: WEATHER_API_KEY is not set")
             return None
         url = "https://api.openweathermap.org/data/2.5/weather"
         params = {
@@ -58,26 +72,26 @@ def get_weather(lat, lon):
             "appid": WEATHER_API_KEY,
             "units": "metric"
         }
-        print(f"[get_weather] Using API key starting with: {WEATHER_API_KEY[:5]}...")
+        logger.info(f"[get_weather] Using API key starting with: {WEATHER_API_KEY[:5]}...")
         response = requests.get(url, params=params, timeout=10)
-        print(f"[get_weather] OpenWeatherMap status: {response.status_code}")
-        print(f"[get_weather] OpenWeatherMap response: {response.text[:200]}")
+        logger.info(f"[get_weather] OpenWeatherMap status: {response.status_code}")
+        logger.info(f"[get_weather] OpenWeatherMap response: {response.text[:200]}")
         data = response.json()
         result = {
             "status": data["weather"][0]["description"],
             "temperature": data["main"]["temp"]
         }
-        print(f"[get_weather] SUCCESS: {result}")
+        logger.info(f"[get_weather] SUCCESS: {result}")
         return result
     except Exception as e:
-        print(f"[get_weather] EXCEPTION: {str(e)}")
+        logger.exception(f"[get_weather] EXCEPTION: {str(e)}")
         return None
 
 
 def get_places_overpass(lat, lon, activity_type):
     """Try to get places from Overpass API"""
     try:
-        print(f"[get_places_overpass] Querying for activity_type={activity_type}")
+        logger.info(f"[get_places_overpass] Querying for activity_type={activity_type}")
         query = f"[out:json];node[amenity={activity_type}](around:2000,{lat},{lon});out 5;"
         servers = [
             "https://overpass-api.de/api/interpreter",
@@ -90,7 +104,7 @@ def get_places_overpass(lat, lon, activity_type):
                     headers={"User-Agent": "WeatherGo/1.0", "Accept": "*/*"},
                     timeout=10
                 )
-                print(f"[get_places_overpass] {server} status: {response.status_code}")
+                logger.info(f"[get_places_overpass] {server} status: {response.status_code}")
                 if response.status_code == 200 and response.text:
                     data = response.json()
                     places = []
@@ -99,15 +113,15 @@ def get_places_overpass(lat, lon, activity_type):
                         name = tags.get("name") or tags.get("addr:street") or "Unknown place"
                         places.append(name)
                     if places:
-                        print(f"[get_places_overpass] SUCCESS via {server}: {places}")
+                        logger.info(f"[get_places_overpass] SUCCESS via {server}: {places}")
                         return places
                     else:
-                        print(f"[get_places_overpass] No elements found via {server}")
+                        logger.info(f"[get_places_overpass] No elements found via {server}")
             except Exception as e:
-                print(f"[get_places_overpass] {server} EXCEPTION: {e}")
+                logger.exception(f"[get_places_overpass] {server} EXCEPTION: {e}")
                 continue
     except Exception as e:
-        print(f"[get_places_overpass] EXCEPTION: {e}")
+        logger.exception(f"[get_places_overpass] EXCEPTION: {e}")
     return None
 
 
@@ -129,12 +143,12 @@ GEOAPIFY_CATEGORY_MAP = {
 def get_places_geoapify(lat, lon, activity_type):
     """Get places from Geoapify (fallback)"""
     try:
-        print(f"[get_places_geoapify] Querying for activity_type={activity_type}")
+        logger.info(f"[get_places_geoapify] Querying for activity_type={activity_type}")
         if not GEO_KEY:
-            print("[get_places_geoapify] ERROR: GEO_KEY is not set")
+            logger.info("[get_places_geoapify] ERROR: GEO_KEY is not set")
             return []
         category = GEOAPIFY_CATEGORY_MAP.get(activity_type, "catering.restaurant")
-        print(f"[get_places_geoapify] Using category: {category}")
+        logger.info(f"[get_places_geoapify] Using category: {category}")
         url = "https://api.geoapify.com/v2/places"
         params = {
             "categories": category,
@@ -143,7 +157,7 @@ def get_places_geoapify(lat, lon, activity_type):
             "apiKey": GEO_KEY,
         }
         response = requests.get(url, params=params, timeout=15)
-        print(f"[get_places_geoapify] Geoapify status: {response.status_code}")
+        logger.info(f"[get_places_geoapify] Geoapify status: {response.status_code}")
         response.raise_for_status()
         features = response.json().get("features", [])
         places = []
@@ -152,29 +166,29 @@ def get_places_geoapify(lat, lon, activity_type):
             if name and name not in places:
                 places.append(name)
         if places:
-            print(f"[get_places_geoapify] SUCCESS: {places}")
+            logger.info(f"[get_places_geoapify] SUCCESS: {places}")
         else:
-            print("[get_places_geoapify] No places found")
+            logger.info("[get_places_geoapify] No places found")
         return places
     except Exception as e:
-        print(f"[get_places_geoapify] EXCEPTION: {e}")
+        logger.exception(f"[get_places_geoapify] EXCEPTION: {e}")
         return []
 
 
 def get_places(lat, lon, activity_type):
     """Try Overpass first, fall back to Geoapify"""
-    print("[get_places] Trying Overpass...")
+    logger.info("[get_places] Trying Overpass...")
     places = get_places_overpass(lat, lon, activity_type)
     if places:
         return places
-    print("[get_places] Overpass failed, switching to Geoapify...")
+    logger.info("[get_places] Overpass failed, switching to Geoapify...")
     return get_places_geoapify(lat, lon, activity_type)
 
 
 def get_recommendation(location, weather, places, activity_type):
     try:
         microservice_url = os.environ.get("GROQ_MICROSERVICE_URL", "http://localhost:5001/generate")
-        print(f"[get_recommendation] Calling microservice at: {microservice_url}")
+        logger.info(f"[get_recommendation] Calling microservice at: {microservice_url}")
         payload = {
             "location": location,
             "weather": weather["status"],
@@ -183,15 +197,15 @@ def get_recommendation(location, weather, places, activity_type):
             "activity_type": activity_type
         }
         response = requests.post(microservice_url, json=payload, timeout=10)
-        print(f"[get_recommendation] Microservice status: {response.status_code}")
+        logger.info(f"[get_recommendation] Microservice status: {response.status_code}")
         if response.status_code == 200:
             result = response.json().get("recommendation")
-            print(f"[get_recommendation] SUCCESS: {str(result)[:100]}")
+            logger.info(f"[get_recommendation] SUCCESS: {str(result)[:100]}")
             return result
-        print(f"[get_recommendation] ERROR: non-200 response: {response.text[:200]}")
+        logger.info(f"[get_recommendation] ERROR: non-200 response: {response.text[:200]}")
         return None
     except Exception as e:
-        print(f"[get_recommendation] EXCEPTION: {str(e)}")
+        logger.exception(f"[get_recommendation] EXCEPTION: {str(e)}")
         return None
 
 
@@ -211,6 +225,13 @@ def list_routes():
         })
     return jsonify(routes)
 
+@app.route('/test_geo')
+def test_geo():
+    lat, lon = get_coordinates("Auckland")
+    return jsonify({
+        "lat": lat,
+        "lon": lon
+    })
 
 @app.route('/health')
 def health():
@@ -219,40 +240,40 @@ def health():
 
 @app.route('/recommend', methods=['POST'])
 def recommend():
-    print("=== /recommend called ===")
+    logger.info("=== /recommend called ===")
     data = request.get_json()
-    print(f"[recommend] Request data: {data}")
+    logger.info(f"[recommend] Request data: {data}")
 
     location = data.get('location')
     activity_type = data.get('activity_type')
-    print(f"[recommend] location={location}, activity_type={activity_type}")
+    logger.info(f"[recommend] location={location}, activity_type={activity_type}")
 
     if not location or not activity_type:
-        print("[recommend] ERROR: Missing required fields")
+        logger.info("[recommend] ERROR: Missing required fields")
         return jsonify({"error": "location and activity_type are required"}), 400
 
-    print("[recommend] Step 1: Getting coordinates...")
+    logger.info("[recommend] Step 1: Getting coordinates...")
     lat, lon = get_coordinates(location)
     if lat is None:
-        print("[recommend] ERROR: Could not get coordinates")
+        logger.info("[recommend] ERROR: Could not get coordinates")
         return jsonify({"error": "Location not recognised, please enter a more specific location"}), 404
 
-    print("[recommend] Step 2: Getting weather...")
+    logger.info("[recommend] Step 2: Getting weather...")
     weather = get_weather(lat, lon)
     if weather is None:
-        print("[recommend] ERROR: Could not get weather")
+        logger.info("[recommend] ERROR: Could not get weather")
         return jsonify({"error": "Weather service is temporarily unavailable, please try again later"}), 503
 
-    print("[recommend] Step 3: Getting places...")
+    logger.info("[recommend] Step 3: Getting places...")
     places = get_places(lat, lon, activity_type)
     if not places:
-        print("[recommend] ERROR: No places found")
+        logger.info("[recommend] ERROR: No places found")
         return jsonify({"error": "No relevant places found nearby"}), 404
 
-    print("[recommend] Step 4: Getting recommendation...")
+    logger.info("[recommend] Step 4: Getting recommendation...")
     recommendation = get_recommendation(location, weather, places, activity_type)
 
-    print("=== /recommend SUCCESS ===")
+    logger.info("=== /recommend SUCCESS ===")
     return jsonify({
         "location": location,
         "weather": weather,
