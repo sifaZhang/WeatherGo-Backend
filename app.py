@@ -195,6 +195,23 @@ def get_recommendation(location, weather, places, activity_type):
         return None
 
 
+
+@app.route('/')
+def index():
+    return jsonify({"status": "WeatherGo API is running"})
+
+@app.route('/routes')
+def list_routes():
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append({
+            "endpoint": rule.endpoint,
+            "methods": list(rule.methods),
+            "path": rule.rule
+        })
+    return jsonify(routes)
+
+
 @app.route('/health')
 def health():
     return jsonify({"status": "ok"})
