@@ -31,27 +31,28 @@ logger.info(f"GROQ_MICROSERVICE_URL: {os.environ.get('GROQ_MICROSERVICE_URL', 'n
 
 
 def get_coordinates(location):
+    """Get coordinates using Geoapify Geocoding API"""
     try:
         logger.info(f"[get_coordinates] Looking up: {location}")
-        url = "https://nominatim.openstreetmap.org/search"
-        params = {
-            "q": location,
-            "format": "json",
-            "limit": 1
-        }
-        headers = {"User-Agent": "WeatherGo/1.0 (Sifazhang.nzl@gmail.com)"}
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-        logger.info(f"[get_coordinates] STATUS={response.status_code}")
-        logger.info(f"[get_coordinates] BODY={response.text[:1000]}")
-        logger.info(f"[get_coordinates] Nominatim status: {response.status_code}")
-        logger.info(f"[get_coordinates] Nominatim response: {response.text[:200]}")
-        response.raise_for_status()
-        data = response.json()
-        if not data:
-            logger.info("[get_coordinates] ERROR: Empty response from Nominatim")
+        if not GEO_KEY:
+            logger.info("[get_coordinates] ERROR: GEO_KEY is not set")
             return None, None
-        lat = float(data[0]["lat"])
-        lon = float(data[0]["lon"])
+        url = "https://api.geoapify.com/v1/geocode/search"
+        params = {
+            "text": location,
+            "limit": 1,
+            "apiKey": GEO_KEY
+        }
+        response = requests.get(url, params=params, timeout=10)
+        logger.info(f"[get_coordinates] STATUS={response.status_code}")
+        logger.info(f"[get_coordinates] BODY={response.text[:500]}")
+        data = response.json()
+        features = data.get("features", [])
+        if not features:
+            logger.info("[get_coordinates] ERROR: Empty response, location not found")
+            return None, None
+        lon = float(features[0]["geometry"]["coordinates"][0])
+        lat = float(features[0]["geometry"]["coordinates"][1])
         logger.info(f"[get_coordinates] SUCCESS: lat={lat}, lon={lon}")
         return lat, lon
     except Exception as e:
@@ -126,17 +127,31 @@ def get_places_overpass(lat, lon, activity_type):
 
 
 GEOAPIFY_CATEGORY_MAP = {
+    # 餐饮
     "cafe":           "catering.cafe",
     "restaurant":     "catering.restaurant",
+    "bar":            "catering.bar",
+    "fast_food":      "catering.fast_food",
+    # 休闲
     "park":           "leisure.park",
-    "library":        "education.library",
-    "supermarket":    "commercial.supermarket",
+    "playground":     "leisure.playground",
+    "cinema":         "entertainment.cinema",
+    "theatre":        "entertainment.theatre",
+    # 运动
     "gym":            "sport.fitness",
     "fitness_centre": "sport.fitness",
+    "swimming_pool":  "sport.swimming",
+    # 购物
+    "supermarket":    "commercial.supermarket",
+    "shopping_mall":  "commercial.shopping_mall",
+    # 教育
+    "library":        "education.library",
+    "school":         "education.school",
+    "university":     "education.university",
+    # 医疗
     "hospital":       "healthcare.hospital",
     "pharmacy":       "healthcare.pharmacy",
-    "school":         "education.school",
-    "cinema":         "entertainment.cinema",
+    "clinic":         "healthcare.clinic",
 }
 
 
@@ -147,7 +162,10 @@ def get_places_geoapify(lat, lon, activity_type):
         if not GEO_KEY:
             logger.info("[get_places_geoapify] ERROR: GEO_KEY is not set")
             return []
-        category = GEOAPIFY_CATEGORY_MAP.get(activity_type, "catering.restaurant")
+        category = GEOAPIFY_CATEGORY_MAP.get(activity_type)
+        if not category:
+            logger.info(f"[get_places_geoapify] Unknown activity_type: {activity_type}")
+            return []
         logger.info(f"[get_places_geoapify] Using category: {category}")
         url = "https://api.geoapify.com/v2/places"
         params = {
@@ -209,10 +227,10 @@ def get_recommendation(location, weather, places, activity_type):
         return None
 
 
-
 @app.route('/')
 def index():
     return jsonify({"status": "WeatherGo API is running"})
+
 
 @app.route('/routes')
 def list_routes():
@@ -225,13 +243,12 @@ def list_routes():
         })
     return jsonify(routes)
 
+
 @app.route('/test_geo')
 def test_geo():
-    lat, lon = get_coordinates("Auckland")
-    return jsonify({
-        "lat": lat,
-        "lon": lon
-    })
+    lat, lon = get_coordinates("Unitec, Mt Albert")
+    return jsonify({"lat": lat, "lon": lon})
+
 
 @app.route('/health')
 def health():
