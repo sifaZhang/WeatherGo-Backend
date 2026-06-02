@@ -3,6 +3,7 @@ import requests
 import os
 import time
 from dotenv import load_dotenv
+from flask_cors import CORS
 
 load_dotenv()
 
@@ -10,6 +11,7 @@ WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY")
 GEO_KEY = os.environ.get("GEO_KEY")
 
 app = Flask(__name__)
+CORS(app)
 
 def get_coordinates(location):
     try:
@@ -19,7 +21,7 @@ def get_coordinates(location):
             "format": "json",
             "limit": 1
         }
-        headers = {"User-Agent": "WeatherGo/1.0"}
+        headers = {"User-Agent": "WeatherGo/1.0 (Sifazhang.nzl@gmail.com)"}
         response = requests.get(url, params=params, headers=headers, timeout=10)
         print("Nominatim status:", response.status_code)
         print("Nominatim response:", response.text[:200])
