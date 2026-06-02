@@ -93,7 +93,7 @@ def get_places_overpass(lat, lon, activity_type):
     """Try to get places from Overpass API"""
     try:
         logger.info(f"[get_places_overpass] Querying for activity_type={activity_type}")
-        query = f"[out:json];node[amenity={activity_type}](around:2000,{lat},{lon});out 5;"
+        query = f"[out:json];node[amenity={activity_type}](around:5000,{lat},{lon});out 5;"
         servers = [
             "https://overpass-api.de/api/interpreter",
         ]
@@ -170,7 +170,7 @@ def get_places_geoapify(lat, lon, activity_type):
         url = "https://api.geoapify.com/v2/places"
         params = {
             "categories": category,
-            "filter": f"circle:{lon},{lat},2000",
+            "filter": f"circle:{lon},{lat},5000",
             "limit": 5,
             "apiKey": GEO_KEY,
         }
